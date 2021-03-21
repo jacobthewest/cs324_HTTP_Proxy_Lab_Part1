@@ -98,64 +98,68 @@ int main(int argc, char *argv[])
 
         // This extracts 'GET' and copies it to the request we're building
         char host[400];
-        char uri[400];
+        char directory[400];
         char port[40];
-        char* tempString = strtok(buf, " ");
-        strcpy(request + strlen(request), tempString); // request now equals GET
+        char* token = strtok(buf, " ");
+        strcpy(request, token); // request now equals GET
         
-        char* theUrl = strtok(NULL, " "); // theUrl = http://www.example.com:8080/index.html
-        char bigArray[800];
-        strcpy(bigArray, theUrl);
-        char* restOfTheRequest = bigArray;
+        char* url = strtok(NULL, " "); // theUrl = http://www.example.com:8080/index.html
+        char strToParse[800];
+        strcpy(strToParse, url);
+        char* rest = strToParse;
 
-        tempString = strtok_r(restOfTheRequest, "/", &restOfTheRequest); // tempString now equals http:
-        restOfTheRequest = restOfTheRequest + 1; // restOfTheRequest equals www.example.com:8080/index.html
-        if(strstr(tempString, "http:") != NULL) {
-            tempString = strtok_r(restOfTheRequest, " ", &restOfTheRequest); // tempString now equals www.example.com:8080/index.html and // restOfTheRequest now equals ""
+        token = strtok_r(rest, "/", &rest); // tempString now equals http:
+        rest = rest + 1; // restOfTheRequest equals www.example.com:8080/index.html
+        if(strstr(token, "http:") != NULL) {
+            token = strtok_r(rest, " ", &rest); // tempString now equals www.example.com:8080/index.html and // restOfTheRequest now equals ""
         }
                                                                        
-        char anotherBigArray[400];
-        char hostNameOnly[400];
-        strcpy(anotherBigArray, tempString);
-        restOfTheRequest = anotherBigArray; // restOfTheRequest = www.example.com:8080/index.html
+        char firstAttempt[400];
+        char plainHost[400];
+        strcpy(firstAttempt, token);
+        rest = firstAttempt; // restOfTheRequest = www.example.com:8080/index.html
                                             // tempString = www.example.com:8080/index.html
-        if(strstr(tempString, ":")) { // Port is in the hostname
-            tempString = strtok_r(restOfTheRequest, "/", &restOfTheRequest); // tempString = www.example.com:8080
-            strcpy(host, tempString); // host = www.example.com:8080
-            tempString = strtok_r(restOfTheRequest, "\0", &restOfTheRequest); // tempString = "/index.html"
+        if(strstr(token, ":")) { // Port is in the hostname
+            token = strtok_r(rest, "/", &rest); // tempString = www.example.com:8080
+            strcpy(host, token); // host = www.example.com:8080
+            token = strtok_r(rest, "\0", &rest); // tempString = "/index.html"
                                                                               // restOfTheRequest = ""
-            strcpy(uri, tempString); // uri = /index.html
+            strcpy(directory, token); // uri = /index.html
 
             // Now we need to break down the host
-            char parseHost[400];
-            strcpy(parseHost, host); 
-            restOfTheRequest = parseHost; // restOfTheRequest = www.example.com:8080
-            tempString = strtok_r(restOfTheRequest, ":", &restOfTheRequest); // tempString = www.example.com
+            char hostToParse[400];
+            strcpy(hostToParse, host); 
+            rest = hostToParse; // restOfTheRequest = www.example.com:8080
+            token = strtok_r(rest, ":", &rest); // tempString = www.example.com
                                                                              // restOfTheRequest = 8080
-            strcpy(port, restOfTheRequest); // port = 8080
-            strcpy(hostNameOnly, tempString); // host = www.example.com
+            strcpy(plainHost, rest); // host = www.example.com
+            strcpy(port, rest); // port = 8080
         } else { // No port in the hostname
-            tempString = strtok_r(restOfTheRequest, "/", &restOfTheRequest); // restOfTheRequest = /index.html
+            token = strtok_r(rest, "/", &rest); // restOfTheRequest = /index.html
                                                                              // tempString = www.example.com
-            strcpy(host, tempString); // host = www.example.com   
-            strcpy(uri, restOfTheRequest); // uri = /index.html
+            strcpy(host, token); // host = www.example.com   
+            strcpy(directory, rest); // uri = /index.html
             strcpy(port, "80");
         }
 
         if(port[strlen(port) - 1] == '/') {
-            port[strlen(port) - 1] = '\0';
+           port[strlen(port) - 1] = '\0';
         }
 
         // Add what we have to the request
-        int lengthOfRequest = strlen(request);
-        request[lengthOfRequest] = ' ';
-        lengthOfRequest++;
-        request[lengthOfRequest] = '/';
-        lengthOfRequest++;
-        strcpy(request + lengthOfRequest, uri); // request = GET /index.html
-        lengthOfRequest = strlen(request);
-        request[lengthOfRequest] = ' ';
-        strcpy(request + strlen(request), "HTTP/1.0\r\n"); // request = GET /index.html\r\n
+        int length = strlen(request);
+        request[length] = ' ';
+        request[length + 1] = '/';
+        strcpy(request + length + 2, directory); // request = GET /index.html
+        length = strlen(request);
+        request[length] = ' ';
+        strcpy(request + length + 1, "HTTP/1.0\r\n"); // request = GET /index.html\r\n
+        token = strtok(NULL, "Host:");
+        if(token != NULL) {
+            token = strtok(NULL, " ");
+            token = strtok(NULL, "\r\n");
+            strcpy(host, token);
+        }
         strcpy(request + strlen(request), "Host: "); 
         strcpy(request + strlen(request), host); 
         strcpy(request + strlen(request), "\r\n"); 
@@ -168,12 +172,12 @@ int main(int argc, char *argv[])
                                                 // User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n
                                                 // Connectoin: close\r\n
                                                 // Proxy-Connection: close\r\n
-        while((tempString = strtok(NULL, "\n")) != NULL) {
-            if(strstr(tempString, "Connection:") != NULL ||
-            strstr(tempString, "Proxy-Connection:") != NULL) {
+        while((token = strtok(NULL, "\n")) != NULL) {
+            if(strstr(token, "Connection:") != NULL ||
+            strstr(token, "Proxy-Connection:") != NULL) {
                 continue;
             }
-            strcpy(request + strlen(request), tempString); 
+            strcpy(request + strlen(request), token); 
             strcpy(request + strlen(request), "\n"); 
         }
         // Terminate the request
@@ -196,9 +200,6 @@ int main(int argc, char *argv[])
         if (port == NULL || strstr(port, " ") != NULL) {
             strcpy(port, "80");
         }
-        printf("HOST: %s\n", host);
-        printf("DIRECTORY: %s\n", directory);
-        printf("PORT: %s\n", port);
 
         // If the host has been changed to have the port appended to it,
         // change it back to how it is without the port appended to it

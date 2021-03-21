@@ -100,14 +100,13 @@ int main(int argc, char *argv[])
         char directory[400];
         char port[40];
         char *token = strtok(buf, " ");
-        strcpy(request, "GET");
-        // This extracts the url
+        strcpy(request, token);
+        
         char *url = strtok(NULL, " ");
         char strToParse[800];
         strcpy(strToParse, url);
         char* rest = strToParse;
-        // If the website starts with https://, then strtok it again
-        // to get the host
+        
         token = strtok_r(rest, "/", &rest);
         rest = rest + 1;
         if(strstr(token, "http:") != NULL) {

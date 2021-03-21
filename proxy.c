@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-// #include <pthread.h>
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -15,6 +14,8 @@
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *connection =  "Connection: close\r\n";
+static const char *proxyConnection = "Proxy-Connection: close\r\n";
 
 // void *thread(void *vargp);
 
@@ -25,7 +26,7 @@ int main(int argc, char *argv[])
     // Read in request
     ////////////////////////////////
     struct sockaddr_in ip4addr;
-    int sfd;
+    int socketFd;
 
     // Ignore SISPIPE signal
     signal(SIGPIPE, SIG_IGN);
@@ -34,42 +35,36 @@ int main(int argc, char *argv[])
     printf("port: %s\n", argv[1]);
     ip4addr.sin_port = htons(atoi(argv[1]));
     ip4addr.sin_addr.s_addr = INADDR_ANY;
-    if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((socketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         exit(EXIT_FAILURE);
     }
-    if (bind(sfd, (struct sockaddr *)&ip4addr, sizeof(struct sockaddr_in)) < 0) {
-        close(sfd);
+    if (bind(socketFd, (struct sockaddr *)&ip4addr, sizeof(struct sockaddr_in)) < 0) {
+        close(socketFd);
         perror("bind error");
         exit(EXIT_FAILURE);
     }
-    if (listen(sfd, 100) < 0) {
-        close(sfd);
+    if (listen(socketFd, 100) < 0) {
+        close(socketFd);
         perror("listen error");
         exit(EXIT_FAILURE);
     }
 
-    int cfd;
-    // pthread_t tid;
+    int clientFd;
 
-    while(1) {
+    for(;;) {
         struct sockaddr_storage peer_addr;
         socklen_t peer_addr_len;
-        // cfd = malloc(sizeof(int));
 
-        cfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
-        // pthread_create(&tid, NULL, thread, cfd);
+        clientFd = accept(socketFd, (struct sockaddr *)&peer_addr, &peer_addr_len);
 
-        // pthread_detach(pthread_self());
-        // int cfd = *((int *)vargp);
-        // free(vargp);
         int nread = 0;
         int total_bytes_read = 0;
         char buf[MAX_OBJECT_SIZE];
         memset(buf, 0, MAX_OBJECT_SIZE);
 
         for (;;) {
-            nread = read(cfd, buf + total_bytes_read, MAX_OBJECT_SIZE);
+            nread = read(clientFd, buf + total_bytes_read, MAX_OBJECT_SIZE);
             total_bytes_read += nread;
 
             // Exit loop if reached end of request
@@ -79,16 +74,15 @@ int main(int argc, char *argv[])
             if (total_bytes_read < 4)
                 continue;
 
-            // printf("\nbuffer: \n%s\n", buf);
+            // If the last four chars is the termination sequence, 
+            // then we are done reading. So exit.
             if (!memcmp(buf + total_bytes_read - 4, "\r\n\r\n", 4)) {
                 break;
             }
             
         }
 
-        char request[4000];
-
-
+        char proxyRequest[4000];
 
         ////////////////////////////////////
         // Parse client request 
@@ -100,41 +94,45 @@ int main(int argc, char *argv[])
         char directory[400];
         char port[40];
         char *token = strtok(buf, " ");
-        strcpy(request, token);
+        strcpy(proxyRequest, token); // proxyRequest = GET
         
-        char *url = strtok(NULL, " ");
+        char *url = strtok(NULL, " "); // url = http://www.example.com:8080/index.html
         char strToParse[800];
         strcpy(strToParse, url);
         char* rest = strToParse;
         
-        token = strtok_r(rest, "/", &rest);
-        rest = rest + 1;
+        token = strtok_r(rest, "/", &rest); // token = http:
+        rest = rest + 1; // rest equals www.example.com:8080/index.html
         if(strstr(token, "http:") != NULL) {
-            token = strtok_r(rest, " ", &rest); 
+            token = strtok_r(rest, " ", &rest); // token now equals www.example.com:8080/index.html 
+                                                // rest now equals ""
         }
 
         char firstAttempt[400];
         char plainHost[400];
         strcpy(firstAttempt, token);
-        rest = firstAttempt;
-        if (strstr(token, ":")) {
-            token = strtok_r(rest, "/", &rest);
-            strcpy(host, token);
-            token = strtok_r(rest, "\0", &rest);
-            strcpy(directory, token);
+        rest = firstAttempt; // rest = www.example.com:8080/index.html
+                             // token = www.example.com:8080/index.html
+        if (strstr(token, ":")) { // Port is in the hostname
+            token = strtok_r(rest, "/", &rest); // token = www.example.com:8080
+            strcpy(host, token); // host = www.example.com:8080
+            token = strtok_r(rest, "\0", &rest); // token = "/index.html"
+                                                 // rest = ""
+            strcpy(directory, token); // directory = /index.html
 
 
             char hostToParse[400];
             strcpy(hostToParse, host);
-            rest = hostToParse;
-            token = strtok_r(rest, ":", &rest);
-            strcpy(plainHost, token);
-            strcpy(port, rest);
+            rest = hostToParse; // rest = www.example.com:8080
+            token = strtok_r(rest, ":", &rest); // token = www.example.com
+                                                // rest = 8080
+            strcpy(plainHost, token); // host = www.example.com
+            strcpy(port, rest); // port = 8080
         }
-        else {
-            token = strtok_r(rest, "/", &rest);
-            strcpy(host, token);
-            strcpy(directory, rest);
+        else { // No port in the hostname 
+            token = strtok_r(rest, "/", &rest); // restOfTheRequest = /index.html
+            strcpy(host, token); // host = www.example.com   
+            strcpy(directory, rest); // directory = /index.html
             strcpy(port, "80");
         }
 
@@ -143,46 +141,44 @@ int main(int argc, char *argv[])
             port[strlen(port) - 1] = '\0';
         }
 
-        // Add the directory to the request we're building
-        // token = strtok(NULL, " ");
-        int length = strlen(request);
-        request[length] = ' ';
-        request[length + 1] = '/';
-        strcpy(request + length + 2, directory);
-        // Add 'HTTP/1.0' to the request
-        length = strlen(request);
-        request[length] = ' ';
-        strcpy(request + length + 1, "HTTP/1.0\r\n");
-        // Find the host line if it exists
+        // Add what we have to the request
+        int length = strlen(proxyRequest);
+        proxyRequest[length] = ' ';
+        proxyRequest[length + 1] = '/';
+        strcpy(proxyRequest + length + 2, directory); // request = GET /index.html
+        length = strlen(proxyRequest);
+        proxyRequest[length] = ' ';
+        strcpy(proxyRequest + length + 1, "HTTP/1.0\r\n"); // request = GET /index.html\r\n
         token = strtok(NULL, "Host:");
         if (token != NULL) {
             token = strtok(NULL, " ");
             token = strtok(NULL, "\r\n");
             strcpy(host, token);
         }
-        // Add host name to the request
-        strcpy(request + strlen(request), "Host: ");
-        strcpy(request + strlen(request), host);
-        strcpy(request + strlen(request), "\r\n");
-        // Add the other things to the request
-        strcpy(request + strlen(request), user_agent_hdr);
-        strcpy(request + strlen(request), "Connection: close\r\n");
-        strcpy(request + strlen(request), "Proxy-Connection: close\r\n");
 
-        // Add on any additional request headers
+        strcpy(proxyRequest + strlen(proxyRequest), "Host: ");
+        strcpy(proxyRequest + strlen(proxyRequest), host);
+        strcpy(proxyRequest + strlen(proxyRequest), "\r\n");
+        strcpy(proxyRequest + strlen(proxyRequest), user_agent_hdr);
+        strcpy(proxyRequest + strlen(proxyRequest), connection);
+        strcpy(proxyRequest + strlen(proxyRequest), proxyConnection);
+        // the request is now complete and looks like this
+                                                // GET_/index.html_HTTP/1.0\r\n
+                                                // Host: www.example.com\r\n
+                                                // User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n
+                                                // Connectoin: close\r\n
+                                                // Proxy-Connection: close\r\n
+
         while ((token = strtok(NULL, "\n")) != NULL) {
-            // Don't add any of these
             if (strstr(token, "Proxy-Connection:") != NULL
                 || strstr(token, "Connection:") != NULL)
                 continue;
                 
-            strcpy(request + strlen(request), token);
-            strcpy(request + strlen(request), "\n");
+            strcpy(proxyRequest + strlen(proxyRequest), token);
+            strcpy(proxyRequest + strlen(proxyRequest), "\n");
         }
         // Terminate request
-        strcpy(request + strlen(request), "\r\n");
-
-        // printf("request:%s\n", request);
+        strcpy(proxyRequest + strlen(proxyRequest), "\r\n");
 
 
 
@@ -192,7 +188,7 @@ int main(int argc, char *argv[])
 
         struct addrinfo hints;
         struct addrinfo *result, *rp;
-        int s, fd;
+        int s, serverFd;
 
         /* Obtain address(es) matching host/port */
         memset(&hints, 0, sizeof(struct addrinfo));
@@ -222,26 +218,24 @@ int main(int argc, char *argv[])
         If socket(2) (or connect(2)) fails, we (close the socket
         and) try the next address. */
         for (rp = result; rp != NULL; rp = rp->ai_next) {
-            fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-            if (fd == -1)
+            serverFd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (serverFd == -1)
                 continue;
-            if (connect(fd, rp->ai_addr, rp->ai_addrlen) != -1)
+            if (connect(serverFd, rp->ai_addr, rp->ai_addrlen) != -1)
                 break; /* Success */
-            close(fd);
+            close(serverFd);
         }
         if (rp == NULL) { /* No address succeeded */
             fprintf(stderr, "Could not connect\n");
         }
         freeaddrinfo(result); /* No longer needed */
 
-
-
         // Write to server and read back response
-        int bytes_read = strlen(request);
+        int bytes_read = strlen(proxyRequest);
         int bytes_sent = 0;
         int current_bytes_received = 0;
         do {
-            current_bytes_received = write(fd, request + bytes_sent, bytes_read - bytes_sent);
+            current_bytes_received = write(serverFd, proxyRequest + bytes_sent, bytes_read - bytes_sent);
             if (current_bytes_received < 0) {
                 fprintf(stderr, "partial/failed write on line 231\n");
                 break;
@@ -255,16 +249,13 @@ int main(int argc, char *argv[])
         bytes_read = 0;
 
         do {
-            nread = read(fd, outputBuffer + bytes_read, MAX_OBJECT_SIZE);
+            nread = read(serverFd, outputBuffer + bytes_read, MAX_OBJECT_SIZE);
             if (nread == -1) {
                 perror("read");
                 break;
             }
             bytes_read += nread;
         } while( nread != 0 );
-
-        // printf("Return response:\n%s", outputBuffer);
-
 
 
         ///////////////////////////////////
@@ -274,7 +265,7 @@ int main(int argc, char *argv[])
         bytes_sent = 0;
         current_bytes_received = 0;
         do {
-            current_bytes_received = write(cfd, outputBuffer + bytes_sent, bytes_read - bytes_sent);
+            current_bytes_received = write(clientFd, outputBuffer + bytes_sent, bytes_read - bytes_sent);
             if (current_bytes_received < 0) {
                 fprintf(stderr, "partial/failed write on line 263\n");
                 break;

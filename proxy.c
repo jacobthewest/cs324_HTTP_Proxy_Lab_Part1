@@ -271,9 +271,8 @@ int main(int argc, char *argv[])
                 break;
             }
             bytes_sent += current_bytes_received;
-
-
         } while( bytes_sent < bytes_read );
+        close(clientFd);
         free(outputBuffer);
     }
 

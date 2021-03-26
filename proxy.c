@@ -122,8 +122,10 @@ int main(int argc, char *argv[])
         int clientFd = accept(socketFd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         sbuf_insert(&sbuf, clientFd);
     }
+    return 0;
+}
 
-    void *thread(void *vargp) {  
+void *thread(void *vargp) {  
         pthread_detach(pthread_self()); 
         while (1) { 
             int clientFd = sbuf_remove(&sbuf); /* Remove connfd from buffer */ //line:conc:pre:removeconnfd
@@ -345,9 +347,6 @@ int main(int argc, char *argv[])
             free(outputBuffer);
         }
     }
-
-    return 0;
-}
 
 
 
